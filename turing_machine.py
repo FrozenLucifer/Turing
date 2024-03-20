@@ -1,5 +1,5 @@
-from typing import List, Tuple, Callable
-from itertools import combinations_with_replacement
+from typing import List, Tuple, Callable, Dict
+from itertools import combinations_with_replacement, product
 
 
 def is_all_a(s: str):
@@ -12,6 +12,14 @@ def is_all_a(s: str):
     return "*0 "
 
 
+def is_length_more_k(s: str, k):
+    is_turing_str(s)
+    s = s[1:-1]
+    if len(s) > k:
+        return '*' + s[:k] + '$' + s[k:] + ' '
+    return '*' + s + ' '
+
+
 class TuringElem:
     def __init__(self, q_in, l_in, q_out, l_out, dir):
         self.q_in = q_in
@@ -21,7 +29,7 @@ class TuringElem:
         self.dir = dir
 
     def __repr__(self):
-        return f'(q{self.q_in}, {self.l_in}) -> (q{self.q_out}, {self.q_out}, {self.dir})'
+        return f'(q{self.q_in}, {self.l_in}) -> (q{self.q_out}, {self.l_out}, {self.dir})'
 
 
 def is_turing_str(s: str):
@@ -31,17 +39,20 @@ def is_turing_str(s: str):
         raise Exception("Дорожка должна заканчиваться пробелом")
 
 
+turing_stats = dict[TuringElem, int]
+
 R = 'R'
 L = 'L'
-Q_END = -1
+Q_END = 'f'
 
 
 class TuringMachine:
-    def __init__(self):
+    def __init__(self, lang):
         self.commands: List[TuringElem] = []
+        self.lang = lang
         self.add(TuringElem(0, '*', 0, '*', R))
 
-    def add(self, elem: TuringElem | Tuple[int, str, int, str, str]):
+    def add(self, elem: TuringElem | Tuple[int | str, str, int | str, str, str]):
         if isinstance(elem, tuple):
             elem = TuringElem(*elem)
         for com in self.commands:
@@ -59,7 +70,18 @@ class TuringMachine:
         for com in commands:
             print(com)
 
-    def run(self, s: str, verbose=False) -> str:
+    def run(self, s: str, verbose=False, _stats: turing_stats = None) -> str:
+
+        def now_state() -> str:
+            line_output = "".join(line).rstrip()
+
+            left = line_output[:i]
+            if not left:
+                left = 'λ'
+            right = line_output[i:] + '☐'
+
+            return f'(q{q}, {left}, {right})'
+
         is_turing_str(s)
         if verbose:
             print(f'Input: [{s}]')
@@ -73,11 +95,16 @@ class TuringMachine:
                         line = line[:-1]
                     result = "".join(line)
                     if verbose:
+                        print(now_state())
                         print(f'Output: [{result}]')
                     return result
                 if com.q_in == q and com.l_in == line[i]:
+                    if _stats is not None:
+                        _stats[com] += 1
                     if verbose:
-                        print(com)
+                        # print(com)
+                        print(now_state(), '->')
+
                     q = com.q_out
                     line[i] = com.l_out
                     if com.dir == R:
@@ -86,20 +113,29 @@ class TuringMachine:
                         i -= 1
                     break
             else:
-                raise Exception('Нет команд для выполнения!')
+                raise Exception(f'Нет команд для выполнения! Сейчас: ({q}, {line[i]})')
 
     def is_behave_func(self, func: Callable[[str], str], l_max=10):
-
-        for l in range(l_max):
-            for word in combinations_with_replacement('ab', l):
+        stats: turing_stats = {}
+        for com in self.commands:
+            stats[com] = 0
+        for l in range(l_max + 1):
+            for word in product(self.lang, repeat=l):
                 s = '*' + ''.join(word) + ' '
-                if self.run(s) != func(s):
-                    print(f'Error on {s}')
+                try:
+                    if self.run(s, _stats=stats) != func(s):
+                        print(f'Вывод не совпадает на {s}')
+                        return False
+                except Exception as ex:
+                    print(f'Вызвана ошибка {ex} на {s}')
                     return False
+
+        for key, value in stats.items():
+            print(f'{key}: {value}')
         return True
 
 
-def main():
+def tm_all_a() -> TuringMachine:
     tm = TuringMachine()
     tm.add((0, ' ', -1, '#', L))
     tm.add((0, 'a', 1, 'a', R))  # *a
@@ -123,7 +159,45 @@ def main():
 
     tm.print()
 
-    # print(tm.is_behave_func(is_all_a))
+    return tm
+
+
+def tm_length_more(k, v='ab'):
+    tm = TuringMachine(v)
+    for i in range(0, k):
+        for a in v:
+            tm.add((i, a, i + 1, a, R))
+    tm.add((0, ' ', Q_END, ' ', L))
+
+    for i in range(1, k + 1):
+        tm.add((i, ' ', 'back', ' ', L))
+
+    for a in v:
+        tm.add(('back', a, 'back', a, L))
+    tm.add(('back', '$', 'back', '$', L))
+
+    for a in v:
+        tm.add((k, a, f'{k}{a}', '$', R))
+
+    for a in v:
+        for b in v:
+            tm.add((f'{k}{a}', b, f'{k}{b}', a, R))
+
+    for a in v:
+        tm.add((f'{k}{a}', ' ', 'back', a, L))
+
+    tm.add(('back', '*', 'pf', '*', R))
+    for a in v:
+        tm.add(('pf', a, Q_END, a, R))
+
+    return tm
+
+
+def main():
+    k = 3
+    tm = tm_length_more(k, 'abc')
+    tm.run("*abca ", verbose=True)
+    # print(tm.is_behave_func(lambda s: is_length_more_k(s, k)))
 
 
 if __name__ == "__main__":
