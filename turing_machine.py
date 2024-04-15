@@ -52,6 +52,7 @@ class TuringMachine:
     def __init__(self, lang):
         self.commands: List[TuringElem] = []
         self.lang = lang
+        self.add(TuringElem(0, '*', 0, '*', R))
 
     def add(self, elem: TuringElem | Tuple[int | str, str, int | str, str, str] |
                         Tuple[int | str, str, int | str, str, str, str]):
